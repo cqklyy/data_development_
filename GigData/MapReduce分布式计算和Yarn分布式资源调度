@@ -1,0 +1,30 @@
+MapReduce的运行机制
+1、将要执行的需求分解成多个Map Task和Reduce Task
+2、将Map Task和Reduce Task分配到对应的服务器中执行
+
+MapReduce与YARN的关系
+YARN用来资源调度资源给MapReduce分配和管理运行资源
+MapReduce程序运行在YARN容器内
+
+YARN，主从架构，有2个主要角色
+主角色：ResourceManager     ——整个集群的资源调度者
+从角色：NodeManager         ——单个集群的资源调度者
+辅助角色：ProxyServer        ——保障WEB UI访问的安全性
+辅助角色：JobHistoryServer   ——记录历史程序运行信息和日志
+
+容器（Containter）是YARN的NodeManager在所属服务器上分配资源的手段
+
+YARN一键启动/停止
+start/stop-yarn.sh
+
+对单个特指manager进行进程管理
+yarn --daemon start/stop/status resourcemanager/nodemanager
+
+常用的MapReduce内置程序
+
+wordcount：单词计数程序
+统计指定文件内各个单词出现的次数
+语法：hadoop jar 程序文件 java类名 [程序参数] [程序参数]
+
+pi：求圆周率
+通过蒙卡特罗算法（统计模拟法）求圆周率

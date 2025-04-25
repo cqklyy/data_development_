@@ -1,0 +1,64 @@
+启动/关闭所有node
+start/stop-dfs.sh
+
+对单个特指node进行进程管理
+hadoop --daemon start/stop/status datanode
+
+查看目前在运行的hadoop集群
+jps
+
+查看 HDFS 中的文件和目录
+hadoop fs -ls [-h] [-R] /path/to/directory
+[-h]:查看储存内存大小
+[-R]:递归查看文件
+
+从 HDFS 下载文件到linux本地
+hdfs dfs -get /path/to/hdfs_file local_file_path
+hadoop fs -get /path/to/hdfs_file local_file_path
+
+从linux本地上传文件至 HDFS
+hadoop fs -put local_file_path /path/to/hdfs_file
+
+删除文件或目录
+hadoop fs -rm /path/to/file
+hadoop fs -rm -r /path/to/directory
+不通过回收站删除
+hadoop fs -rm -skipTrash /path/to/file
+
+查看文件内容（分页）
+hadoop fs -cat /path/to/hdfs_file | more
+
+权限管理
+设置文件权限
+hadoop fs -chmod 755 /path/to/file_or_directory
+设置文件所有者
+hadoop fs  -chown user:group /path/to/file_or_directory
+
+hdfs 存储原理和安全性
+解决问题：文件大小不一，不利于统一管理
+HDFS：设定统一的管理模块，block块（HDFS最小的存储单位，每个256MB（可修改））
+
+HDFS副本机制：通过多个副本（备份）解决，每个副本都复制到其它服务器一份，安全性极大提高
+
+上传时修改存储副本数(默认3副本)
+hadoop fs -D dfs.replication=2 -put local_file_path /path/to/hdfs_file
+
+修改已存储文件副本数
+hadoop fs -setrep 1 /path/to/hdfs_file
+
+fsck 命令检查文件的副本数
+hdfs fsck path [-files [-blocks [locations]]]
+[-files]:可以列出路径内的文件状态
+[-files -blocks]:输出文件块报告（有几个块，多少副本）
+[-files -blocks -locations]:输出每一个block的详情
+
+NameNode元数据管理维护
+Namenode基于edits和FSImage的配合，完成整个文件系统的管理
+1、每次对HDFS的操作，均被edits文件记录
+2、edits达到大小上限后，开启新的edits
+3、定期进行edits的合并操作
+  （1）如当前没有fsimage文件，将全部edits合并为第一个fsimage
+  （2）如当前已存在fsimage文件，将全部edits和已存在的fsimage进行合并，形成新的fsimage
+
+合并元数据是由辅助角色：SecondaryNameNode完成
+

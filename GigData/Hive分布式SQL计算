@@ -1,0 +1,206 @@
+Apache Hive是将SQL语句翻译成MapReduce程序，从而提供用户分布式SQL计算的能力的工具
+Hive主要有两大组件：元数据管理(metastore)和SQL解释器
+
+hdfs dfsadmin -safemode forceExit
+该命令用于强制退出 HDFS 安全模式
+
+启动元数据管理服务（必须启动，负责无法工作）
+[hadoop@node1 hive]$ nohup bin/hive --service metastore >> logs/metastore.log 2>&1 &
+把标准输出和标准错误等等相关的全部输出信息都转存到logs/metastore.log
+
+
+
+启动客户端
+第一种：Hive Shell（可以直接写SQL）:bin/hive
+第二种：Hive ThriftServer方式（不可以直接写SQL，需要外部客户端链接使用）: bin/hive --service hiveserver2
+后台启动客户端：[hadoop@node1 hive]$ nohup bin/hive --service hiveserver2 >> logs/hiveserver2.log 2>&1 &
+
+启动内置客户端beeline
+[hadoop@node1 hive]$ bin/beeline
+
+beeline连接hiveserver2
+!connect jdbc:hive2://node1:10000
+
+第三方图形化工具也可以连接hive数据库
+jdbc:hive2://192.168.31.129:10000
+
+Hive中可以创建的表有以下类型：
+
+内部表：未被external关键字修饰，即普通表。内部表数据存储的位置默认：/user/hive/warehouse
+删除内部表会直接删除元数据（metadata）及存储数据，因此内部表不适合和其他工具共享数据
+
+外部表：被external关键字修饰，即关联表。外部表是指表数据可以在任何位置，通过location关键字指定
+数据存储的不同也代表了这个表在理念是并不是Hive内部管理的，而是可以随意链接到外部数据上的
+分区表
+分桶表
+
+内外部表转换,'EXTERNAL'='TRUE/FALSE'一定要为大写
+alter table tablename set tbproperties('EXTERNAL'='TRUE/FALSE')
+
+hive正常不支持对数据的更改和删除
+传统 Hive（早期版本）：最初，Hive 主要设计为对不可变数据的分析查询引擎。它根本不支持 UPDATE 和 DELETE作。
+现代 Hive（0.14 后版本）：后续版本引入了 ACID（原子性、一致性、隔离性、持久性）事务支持，支持 UPDATE 和 DELETE作，但有特定要求：
+1、必须将表创建为事务表
+2、它需要使用 ORC 文件格式
+3、必须启用特定的 Hive 配置设置
+
+删除内部表，表信息以及表数据全部都被删除
+...row format delimited fields terminated by '\t' location 'hdfs path';  -- 分隔符自定义为‘\t’,默认‘\001’
+
+hive中的路径都是以文件夹为单位
+
+desc formatted tablename;   --查看表信息
+
+数据加载-load语法
+load DATA [local] inpath 'filepath' [overwrite] into table tablename;
+local:指源文件在linux文件系统上
+overwrite:覆盖
+hdfs上传数据,本质上是mv移到到目标目录上，因此源文件会消失
+
+除了数据加载外部数据外，也可以通过SQL语句，从其他表中加载数据
+语法：
+insert [overwrite| into] table tablrname1
+    [partition(partcol1=val1,partcol2=val2...) [if not exists]]
+        select_satement1 from from_statement;
+
+数据导出
+
+insert overwrite 方法
+语法：insert overwrite [local] directory 'path' row format delimited field terminated by '\t'
+ select_statement1 from_statement ;
+
+ hive表数据导出 - hive shell
+ 基本语法: (hive -e/-f 执行语句/脚本 > file)
+ bin/hive -f/-e 'select * from tablename' /export.sql> file_path
+
+Hive分区表，一个分区就是一个文件夹
+基本语法：create table tablename(...) partitioned by (分区列 列类型,...)
+ row format delimited fields terminated by '';
+
+创建表的时候有几个分区，插入数据的时候就要有几个分区对应上
+分区表可以极大的提高特定场景下Hive的操作性能
+
+开启分桶的自动优化
+set hive.enforce.bucketing=true;
+
+语法：
+create table tablename(...) clustered by (column) into n buckets
+row format delimited fields terminated by '';
+
+桶表的数据加载通过load data无法执行，只能通过insert select
+比较好的方法是
+1、创建一个临时表，通过load data加载数据进表
+2、然后通过insert select从临时表向桶表插入数据
+
+数据的n份划分基于分桶列的值进行hash取模来决定
+由于load data不会触发MapReduce，也就是没有计算过程（无法执行hash算法），只是简单的移动数据而已，所以无法用于分桶表插入数据
+基于分桶表做操作前提下：
+1、单值过滤
+2、join
+3、Group by
+
+修改表
+alter table tablename rename to newname;
+修改表属性
+alter table tablename set tbproperties ('EXTERNAL'='TRUE');
+添加表分区,但是没有数据，需要手动上传
+alter table tablename add partition (...);
+修改表分区值（修改元数据记录，HDFS的实体文件不会改名）
+alter table tablename partition(...) rename to partition(...)
+删除元数据，HDFS实体数据还在
+alter table tablename drop partition (...);
+添加新列
+alter table tablename add columns(...)
+修改列名
+alter table tablename change v2 newv1 int(原本数据类型);
+删除表  不要删除分桶表！！！
+drop table tablename;
+清空表数据（外部表无法执行）
+truncate table tablename;
+
+复杂类型array，键值对要是同一类型
+eg:create table test_array(name string,work_location array<string>)
+row format delimited fields terminated by '\t'
+collection items terminated by ',';
+-- 找谁在tianjin工作过
+select * from test_array where array_contains(work_location,'tianjin');
+
+复杂类型map，键值对可以不是同一类型
+语句eg：
+create table test_map(
+    id int,
+    name string,
+    member map<string,string>,
+    age int
+)row format delimited fields terminated by ',‘  --列之间的分隔符
+collection items terminated by '#'      --键值对之间的分隔符
+map keys terminated by ':';     --键值对内部的分隔符
+-- 简单索引
+select id ,name,test_map.member['father'] as father from test_map;
+-- 取出map全部key
+select map_keys(test_map.member) from test_map;
+
+struct类型是一个复合类型，可以在一个列中存入多个子列，每个子列允许设置类型和名称
+create table test_sruct (id string,info struct<name:string,age:int>)
+row format delimited fields terminated by '#'
+collection items terminated by':';
+-- 查询内容
+select id,info.name,info.age from test_sruct;
+
+正则表达式
+.   匹配任意单个字符
+[]  匹配[]中的任意一个字符
+*   匹配零次或多次前面的字符
++   匹配一次或多次前面的字符
+？   匹配零次或一次前面的字符
+\w  单词字符
+\W  非单词字符
+\s  空白字符
+\S  非空白字符
+\d  匹配数字字符
+\D  匹配非数字字符
+p{n}    固定匹配n次p类型字符
+p{n,}   至少匹配n次p类型字符
+p{n,m}   匹配至少n次，最多m次p类型字符
+eg：查询手机号符合：188****0***规则
+select * from orders where userphone rlike '188[0-9]{4}0[0-9]]{3}';
+
+union默认去重，union[all]不去重
+
+tablesample函数
+语法1，基于随机分桶抽样：
+select * from tbname tablesample(bucket x out of y on (colname | rand()))
+y表示将表的数据随机划分成y份
+x表示从y中里面随机抽取x份数据作为取样
+colname表示随机的依据基于某个列的值
+rand()表示随机的依据基于整行
+注意：
+使用colname作为随机依据，则其他条件不变下，每次抽样结果一致
+使用rand()作为随机依据，每次抽样结果都不同
+
+语法2：基于数据块抽样
+select ... from tbname tablesample(num rows | num percent | num(K|M|G))
+num rows表示抽样num条数据
+num percent表示抽样num百分百比例的数据
+num(K|M|G)表示抽样num大小的数据，单位可以是K、M、G表示KB、MB、GB
+注意：
+使用这种语法抽样，条件不变的话，每一次抽样都一样
+即无法做到随机，只是按照数据顺序从前向后取
+
+virtual columns虚拟列
+hive目前可以用的3个虚拟列
+INPUT_FILE_NAME,显示数据行所在的具体文件
+BLOCK_OFFSET_INSERT_FILE,显示数据行所文件的偏移量
+ROW_OFFSET_INSERT_BLOCK,显示数据所在HDSF块的偏移量（此虚拟列需要设置：set hive.exec.rowoffset=true 才可用）
+
+-- 查看所有可用函数
+show functions ;
+-- 查看函数使用方式
+describe function extended lcase;
+-- case函数
+eg:select username,case username when 'lyy' then '陈麒开的宝宝' when...then... else '不知道身份' end from tablename
+select truename,case when truename is null then '不知道名字' else '明星' end from users;
+-- 字符串函数
+-- 连接字符串
+concat(string|binary,string|binary...)
+concat_ws('分隔符',string|binary,string|binary...)
